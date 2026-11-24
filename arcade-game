@@ -1,0 +1,177 @@
+#!/usr/bin/env python3
+import tkinter as tk
+import random
+
+class ThorArcadeGame:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Thor OS - Thunder Striker Arcade")
+        self.root.geometry("600x700")
+        self.root.resizable(False, False)
+        self.root.configure(bg="#050814")
+
+        # Game state
+        self.score = 0
+        self.lives = 3
+        self.game_over = False
+        self.bullets = []
+        self.enemies = []
+        self.stars = []
+        
+        # UI Header
+        self.header = tk.Frame(root, bg="#0d1527", height=50)
+        self.header.pack(fill=tk.X)
+        
+        self.score_lbl = tk.Label(self.header, text="SCORE: 0", font=("Consolas", 14, "bold"), fg="#ffcc00", bg="#0d1527")
+        self.score_lbl.pack(side=tk.LEFT, padx=20, pady=10)
+        
+        self.lives_lbl = tk.Label(self.header, text="⚡ LIVES: 3", font=("Consolas", 14, "bold"), fg="#00e5ff", bg="#0d1527")
+        self.lives_lbl.pack(side=tk.RIGHT, padx=20, pady=10)
+
+        # Game Canvas
+        self.canvas = tk.Canvas(root, bg="#050814", width=600, height=650, highlightthickness=0)
+        self.canvas.pack()
+
+        # Starfield background
+        for _ in range(60):
+            x = random.randint(0, 600)
+            y = random.randint(0, 650)
+            sz = random.randint(1, 3)
+            star = self.canvas.create_oval(x, y, x+sz, y+sz, fill="#406090", outline="")
+            self.stars.append((star, random.randint(1, 4)))
+
+        # Player (Thor's Lightning Defender)
+        self.px = 300
+        self.py = 580
+        self.player = self.draw_player(self.px, self.py)
+
+        # Controls
+        self.root.bind("<Left>", lambda e: self.move_player(-25))
+        self.root.bind("<Right>", lambda e: self.move_player(25))
+        self.root.bind("<a>", lambda e: self.move_player(-25))
+        self.root.bind("<d>", lambda e: self.move_player(25))
+        self.root.bind("<space>", lambda e: self.shoot())
+        self.root.bind("<r>", lambda e: self.restart())
+
+        # Start loop
+        self.spawn_timer = 0
+        self.update_game()
+
+    def draw_player(self, x, y):
+        p1 = self.canvas.create_polygon(x, y-25, x-22, y+20, x, y+10, x+22, y+20, fill="#00c8ff", outline="#ffffff", width=2)
+        p2 = self.canvas.create_oval(x-6, y-10, x+6, y+2, fill="#ffcc00", outline="")
+        return [p1, p2]
+
+    def move_player(self, dx):
+        if self.game_over:
+            return
+        if 30 <= self.px + dx <= 570:
+            self.px += dx
+            for part in self.player:
+                self.canvas.move(part, dx, 0)
+
+    def shoot(self):
+        if self.game_over:
+            return
+        # Electric lightning bolt
+        b = self.canvas.create_line(self.px, self.py-30, self.px, self.py-50, fill="#00ffff", width=4)
+        self.bullets.append(b)
+
+    def restart(self):
+        if not self.game_over:
+            return
+        self.score = 0
+        self.lives = 3
+        self.game_over = False
+        self.score_lbl.config(text="SCORE: 0")
+        self.lives_lbl.config(text="⚡ LIVES: 3")
+        for b in self.bullets:
+            self.canvas.delete(b)
+        for e, _ in self.enemies:
+            self.canvas.delete(e)
+        self.bullets.clear()
+        self.enemies.clear()
+        self.canvas.delete("gameover")
+        self.update_game()
+
+    def update_game(self):
+        if self.game_over:
+            return
+
+        # Animate stars
+        for star, speed in self.stars:
+            self.canvas.move(star, 0, speed)
+            coords = self.canvas.coords(star)
+            if coords[1] > 650:
+                self.canvas.coords(star, coords[0], 0, coords[0]+2, 2)
+
+        # Move bullets
+        for b in list(self.bullets):
+            self.canvas.move(b, 0, -18)
+            coords = self.canvas.coords(b)
+            if coords[1] < 0:
+                self.canvas.delete(b)
+                self.bullets.remove(b)
+
+        # Spawn enemies
+        self.spawn_timer += 1
+        if self.spawn_timer % 30 == 0:
+            ex = random.randint(40, 560)
+            sz = random.randint(22, 38)
+            color = random.choice(["#ff3366", "#ff6600", "#cc00ff", "#ff0033"])
+            e = self.canvas.create_oval(ex-sz//2, -sz, ex+sz//2, 0, fill=color, outline="#ffffff")
+            speed = random.randint(3, 7)
+            self.enemies.append((e, speed))
+
+        # Move enemies & check collision
+        for item in list(self.enemies):
+            e, spd = item
+            self.canvas.move(e, 0, spd)
+            ecoords = self.canvas.coords(e)
+            if not ecoords:
+                continue
+
+            # Check if hit player
+            if ecoords[3] >= self.py - 20 and ecoords[1] <= self.py + 20:
+                if abs(ecoords[0] - self.px) < 30:
+                    self.canvas.delete(e)
+                    self.enemies.remove(item)
+                    self.lives -= 1
+                    self.lives_lbl.config(text=f"⚡ LIVES: {self.lives}")
+                    if self.lives <= 0:
+                        self.trigger_game_over()
+                        return
+                    continue
+
+            # Check bottom boundary
+            if ecoords[1] > 650:
+                self.canvas.delete(e)
+                self.enemies.remove(item)
+                continue
+
+            # Check bullet collision
+            for b in list(self.bullets):
+                bcoords = self.canvas.coords(b)
+                if not bcoords:
+                    continue
+                if (ecoords[0] <= bcoords[0] <= ecoords[2]) and (ecoords[1] <= bcoords[1] <= ecoords[3]):
+                    self.canvas.delete(b)
+                    self.bullets.remove(b)
+                    self.canvas.delete(e)
+                    self.enemies.remove(item)
+                    self.score += 100
+                    self.score_lbl.config(text=f"SCORE: {self.score}")
+                    break
+
+        self.root.after(30, self.update_game)
+
+    def trigger_game_over(self):
+        self.game_over = True
+        self.canvas.create_text(300, 260, text="GAME OVER", font=("Consolas", 36, "bold"), fill="#ff3366", tags="gameover")
+        self.canvas.create_text(300, 320, text=f"FINAL SCORE: {self.score}", font=("Consolas", 20, "bold"), fill="#ffcc00", tags="gameover")
+        self.canvas.create_text(300, 380, text="Press 'R' or Space to Play Again", font=("Consolas", 14), fill="#00e5ff", tags="gameover")
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ThorArcadeGame(root)
+    root.mainloop()
